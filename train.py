@@ -37,6 +37,10 @@ from timm.optim import create_optimizer_v2, optimizer_kwargs
 from timm.scheduler import create_scheduler
 from timm.utils import ApexScaler, NativeScaler
 
+from sparseml.pytorch.optim import ScheduledModifierManager
+from sparseml.pytorch.utils import ModuleExporter, PythonLogger, TensorBoardLogger
+from sparsezoo import Zoo
+
 try:
     from apex import amp
     from apex.parallel import DistributedDataParallel as ApexDDP
@@ -69,6 +73,16 @@ parser.add_argument('-c', '--config', default='', type=str, metavar='FILE',
 
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
+
+# SparseML args
+parser.add_argument(
+    "--recipe",
+    required=True,
+    type=str,
+    help="path to a SparseML recipe file or a SparseZoo model stub for a recipe to load. "
+    "SparseZoo stubs should be preceded by 'zoo:'. i.e. '/path/to/local/recipe.yaml', "
+    "'zoo:zoo/model/stub'"
+)
 
 # Dataset / Model parameters
 parser.add_argument('data_dir', metavar='DIR',
@@ -346,6 +360,26 @@ def main():
 
     random_seed(args.seed, args.rank)
 
+    # optional: load model weights from SparseZoo
+    if args.initial_checkpoint == "zoo":
+        # Load checkpoint from base weights associated with given SparseZoo recipe
+        if args.recipe.startswith("zoo:"):
+            args.initial_checkpoint = Zoo.download_recipe_base_framework_files(
+                args.recipe,
+                extensions=[".pth.tar", ".pth"]
+            )[0]
+        else:
+            raise ValueError(
+                "Attempting to load weights from SparseZoo recipe, but not given a "
+                "SparseZoo recipe stub.  When initial-checkpoint is set to 'zoo'. "
+                "sparseml-recipe must start with 'zoo:' and be a SparseZoo model "
+                f"stub. sparseml-recipe was set to {args.recipe}"
+            )
+    elif args.initial_checkpoint.startswith("zoo:"):
+        # Load weights from a SparseZoo model stub
+        zoo_model = Zoo.load_model_from_stub(args.initial_checkpoint)
+        args.initial_checkpoint = zoo_model.download_framework_files(extensions=[".pth"])[0]
+
     model = create_model(
         args.model,
         pretrained=args.pretrained,
@@ -578,6 +612,26 @@ def main():
         with open(os.path.join(output_dir, 'args.yaml'), 'w') as f:
             f.write(args_text)
 
+    # main SparseML integration
+    sparseml_loggers = (
+        [PythonLogger(), TensorBoardLogger(log_path=output_dir)]
+        if output_dir
+        else None
+    )
+    manager = ScheduledModifierManager.from_yaml(args.recipe)
+    if args.rank == 0:
+        manager.initialize_loggers(sparseml_loggers)
+    optimizer = manager.modify(model, optimizer, len(loader_train))
+
+    if manager.learning_rate_modifiers:
+        _logger.info("Disabling timm LR scheduler, managing LR using SparseML recipe")
+        lr_scheduler = None
+    if manager.epoch_modifiers:
+        _logger.info(
+            f"Overriding max_epochs to {manager.max_epochs} from SparseML recipe"
+        )
+        num_epochs = manager.max_epochs or num_epochs
+
     try:
         for epoch in range(start_epoch, num_epochs):
             if args.distributed and hasattr(loader_train.sampler, 'set_epoch'):
@@ -615,6 +669,17 @@ def main():
                 # save proper checkpoint with eval metric
                 save_metric = eval_metrics[eval_metric]
                 best_metric, best_epoch = saver.save_checkpoint(epoch, metric=save_metric)
+
+        # ONNX export
+        if output_dir:
+            _logger.info(
+                f"training complete, exporting ONNX to {output_dir}/model.onnx"
+            )
+            exporter = ModuleExporter(model, output_dir)
+            exporter.export_onnx(
+                torch.randn((1, *data_config["input_size"])),
+                convert_qat=True
+            )
 
     except KeyboardInterrupt:
         pass
