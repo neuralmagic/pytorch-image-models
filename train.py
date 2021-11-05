@@ -324,7 +324,9 @@ def main():
         else: 
             _logger.warning("You've requested to log metrics to wandb but package not found. "
                             "Metrics not being logged to wandb, try `pip install wandb`")
+
             args.log_wandb = False
+
 
     args.cuda = not args.disable_cuda
     args.prefetcher = not args.no_prefetcher
