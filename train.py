@@ -38,7 +38,7 @@ from timm.scheduler import create_scheduler
 from timm.utils import ApexScaler, NativeScaler
 
 from sparseml.pytorch.optim import ScheduledModifierManager
-from sparseml.pytorch.utils import ModuleExporter, PythonLogger, TensorBoardLogger
+from sparseml.pytorch.utils import ModuleExporter, PythonLogger, TensorBoardLogger, WANDBLogger
 from sparsezoo import Zoo
 
 try:
@@ -334,11 +334,9 @@ def main():
                         "Reverting to non-distributed training")
     if 'WORLD_SIZE' in os.environ:
         args.distributed = int(os.environ['WORLD_SIZE']) > 1
-    args.device = 'cuda:0'
     args.world_size = 1
     args.rank = 0  # global rank
     if args.distributed:
-        args.device = 'cuda:%d' % args.local_rank
         torch.cuda.set_device(args.local_rank)
         torch.distributed.init_process_group(backend='nccl', init_method='env://')
         args.world_size = torch.distributed.get_world_size()
@@ -628,7 +626,7 @@ def main():
 
     # main SparseML integration
     sparseml_loggers = (
-        [PythonLogger(), TensorBoardLogger(log_path=output_dir)]
+        [PythonLogger(), TensorBoardLogger(log_path=output_dir), WANDBLogger()]
         if output_dir
         else None
     )
