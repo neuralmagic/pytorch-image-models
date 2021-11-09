@@ -629,7 +629,7 @@ def main():
 
     # main SparseML integration
     sparseml_loggers = (
-        [PythonLogger(), TensorBoardLogger(log_path=output_dir)]
+        [PythonLogger(), TensorBoardLogger(log_path=output_dir), WANDBLogger()]
         if output_dir
         else None
     )
