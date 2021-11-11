@@ -115,13 +115,13 @@ class PrefetchLoader:
                 if self.random_erasing is not None:
                     next_input = self.random_erasing(next_input)
 
-            if not first:
-                yield input, target
-            else:
-                first = False
+                if not first:
+                    yield input, target
+                else:
+                    first = False
 
-            input = next_input
-            target = next_target
+                input = next_input
+                target = next_target
 
         yield input, target
 
