@@ -626,10 +626,12 @@ def main():
 
     # main SparseML integration
     sparseml_loggers = (
-        [PythonLogger(), TensorBoardLogger(log_path=output_dir), WANDBLogger()]
+        [PythonLogger(), TensorBoardLogger(log_path=output_dir)]
         if output_dir
         else None
     )
+    if output_dir and has_wandb:
+        sparseml_loggers.append(WANDBLogger())
     manager = ScheduledModifierManager.from_yaml(args.recipe)
     if args.rank == 0:
         manager.initialize_loggers(sparseml_loggers)
