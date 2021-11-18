@@ -324,6 +324,7 @@ def main():
         else: 
             _logger.warning("You've requested to log metrics to wandb but package not found. "
                             "Metrics not being logged to wandb, try `pip install wandb`")
+            args.log_wandb = False
 
     args.cuda = not args.disable_cuda
     args.prefetcher = not args.no_prefetcher
@@ -630,7 +631,7 @@ def main():
         if output_dir
         else None
     )
-    if output_dir and has_wandb:
+    if output_dir and args.log_wandb:
         sparseml_loggers.append(WANDBLogger())
     manager = ScheduledModifierManager.from_yaml(args.recipe)
     if args.rank == 0:
