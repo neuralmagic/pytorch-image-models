@@ -266,6 +266,8 @@ parser.add_argument('-j', '--workers', type=int, default=4, metavar='N',
                     help='how many training processes to use (default: 1)')
 parser.add_argument('--save-images', action='store_true', default=False,
                     help='save images of input bathes every log interval for debugging')
+parser.add_argument('--distributed', action='store_true', default=False,
+                    help='Use distributed training')
 parser.add_argument('--disable_cuda', action='store_true', default=False,
                     help='train without CUDA')
 parser.add_argument('--amp', action='store_true', default=False,
@@ -328,7 +330,6 @@ def main():
 
     args.cuda = not args.disable_cuda
     args.prefetcher = not args.no_prefetcher
-    args.distributed = False
     if args.distributed and args.disable_cuda:
         args.distributed = False
         _logger.warning("Distributed training not currently supported for CPUs. "
