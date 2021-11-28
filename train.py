@@ -320,7 +320,7 @@ def main():
     
     if args.log_wandb:
         if has_wandb:
-            wandb.init(project=args.experiment, config=args, dir = '.wandb_logs')
+            wandb.init(project=args.experiment, config=args, dir = './wandb_logs')
         else: 
             _logger.warning("You've requested to log metrics to wandb but package not found. "
                             "Metrics not being logged to wandb, try `pip install wandb`")
