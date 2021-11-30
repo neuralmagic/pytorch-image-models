@@ -123,8 +123,6 @@ class PrefetchLoader:
                 input = next_input
                 target = next_target
 
-
-
         yield input, target
 
     def __len__(self):
