@@ -330,7 +330,6 @@ def main():
 
     args.cuda = not args.disable_cuda
     args.prefetcher = not args.no_prefetcher
-
     if args.distributed and args.disable_cuda:
         args.distributed = False
         _logger.warning("Distributed training not currently supported for CPUs. "
