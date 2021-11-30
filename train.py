@@ -38,7 +38,7 @@ from timm.scheduler import create_scheduler
 from timm.utils import ApexScaler, NativeScaler
 
 from sparseml.pytorch.optim import ScheduledModifierManager
-from sparseml.pytorch.utils import ModuleExporter, PythonLogger, TensorBoardLogger
+from sparseml.pytorch.utils import ModuleExporter, PythonLogger, TensorBoardLogger, WANDBLogger
 from sparsezoo import Zoo
 
 try:
@@ -266,6 +266,8 @@ parser.add_argument('-j', '--workers', type=int, default=4, metavar='N',
                     help='how many training processes to use (default: 1)')
 parser.add_argument('--save-images', action='store_true', default=False,
                     help='save images of input bathes every log interval for debugging')
+parser.add_argument('--disable_cuda', action='store_true', default=False,
+                    help='train without CUDA')
 parser.add_argument('--amp', action='store_true', default=False,
                     help='use NVIDIA Apex AMP or Native AMP for mixed precision training')
 parser.add_argument('--apex-amp', action='store_true', default=False,
@@ -318,20 +320,24 @@ def main():
     
     if args.log_wandb:
         if has_wandb:
-            wandb.init(project=args.experiment, config=args)
+            wandb.init(project=args.experiment, config=args, dir = args.output if args.output else './output/train')
         else: 
             _logger.warning("You've requested to log metrics to wandb but package not found. "
                             "Metrics not being logged to wandb, try `pip install wandb`")
-             
+            args.log_wandb = False
+
+    args.cuda = not args.disable_cuda
     args.prefetcher = not args.no_prefetcher
     args.distributed = False
+    if args.distributed and args.disable_cuda:
+        args.distributed = False
+        _logger.warning("Distributed training not currently supported for CPUs. "
+                        "Reverting to non-distributed training")
     if 'WORLD_SIZE' in os.environ:
         args.distributed = int(os.environ['WORLD_SIZE']) > 1
-    args.device = 'cuda:0'
     args.world_size = 1
     args.rank = 0  # global rank
     if args.distributed:
-        args.device = 'cuda:%d' % args.local_rank
         torch.cuda.set_device(args.local_rank)
         torch.distributed.init_process_group(backend='nccl', init_method='env://')
         args.world_size = torch.distributed.get_world_size()
@@ -339,7 +345,7 @@ def main():
         _logger.info('Training in distributed mode with multiple processes, 1 GPU per process. Process %d, total %d.'
                      % (args.rank, args.world_size))
     else:
-        _logger.info('Training with a single process on 1 GPUs.')
+        _logger.info('Training with a single process')
     assert args.rank >= 0
 
     # resolve AMP arguments based on PyTorch / Apex availability
@@ -416,7 +422,8 @@ def main():
         model = convert_splitbn_model(model, max(num_aug_splits, 2))
 
     # move model to GPU, enable channels last layout if set
-    model.cuda()
+    if args.cuda:
+        model.cuda()
     if args.channels_last:
         model = model.to(memory_format=torch.channels_last)
 
@@ -558,7 +565,8 @@ def main():
         distributed=args.distributed,
         collate_fn=collate_fn,
         pin_memory=args.pin_mem,
-        use_multi_epochs_loader=args.use_multi_epochs_loader
+        use_multi_epochs_loader=args.use_multi_epochs_loader,
+        cuda=args.cuda
     )
 
     loader_eval = create_loader(
@@ -574,20 +582,25 @@ def main():
         distributed=args.distributed,
         crop_pct=data_config['crop_pct'],
         pin_memory=args.pin_mem,
+        cuda=args.cuda
     )
 
     # setup loss function
     if args.jsd:
         assert num_aug_splits > 1  # JSD only valid with aug splits set
-        train_loss_fn = JsdCrossEntropy(num_splits=num_aug_splits, smoothing=args.smoothing).cuda()
+        train_loss_fn = JsdCrossEntropy(num_splits=num_aug_splits, smoothing=args.smoothing)
     elif mixup_active:
         # smoothing is handled with mixup target transform
-        train_loss_fn = SoftTargetCrossEntropy().cuda()
+        train_loss_fn = SoftTargetCrossEntropy()
     elif args.smoothing:
-        train_loss_fn = LabelSmoothingCrossEntropy(smoothing=args.smoothing).cuda()
+        train_loss_fn = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
     else:
-        train_loss_fn = nn.CrossEntropyLoss().cuda()
-    validate_loss_fn = nn.CrossEntropyLoss().cuda()
+        train_loss_fn = nn.CrossEntropyLoss()
+    validate_loss_fn = nn.CrossEntropyLoss()
+
+    if args.cuda:
+        train_loss_fn = train_loss_fn.cuda()
+        validate_loss_fn = validate_loss_fn.cuda()
 
     # setup checkpoint saver and eval metric tracking
     eval_metric = args.eval_metric
@@ -618,6 +631,8 @@ def main():
         if output_dir
         else None
     )
+    if output_dir and args.log_wandb:
+        sparseml_loggers.append(WANDBLogger())
     manager = ScheduledModifierManager.from_yaml(args.recipe)
     if args.rank == 0:
         manager.initialize_loggers(sparseml_loggers)
@@ -640,20 +655,20 @@ def main():
             train_metrics = train_one_epoch(
                 epoch, model, loader_train, optimizer, train_loss_fn, args,
                 lr_scheduler=lr_scheduler, saver=saver, output_dir=output_dir,
-                amp_autocast=amp_autocast, loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn)
+                amp_autocast=amp_autocast, loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn, cuda=args.cuda)
 
             if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
                 if args.local_rank == 0:
                     _logger.info("Distributing BatchNorm running means and vars")
                 distribute_bn(model, args.world_size, args.dist_bn == 'reduce')
 
-            eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast)
+            eval_metrics = validate(model, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, cuda=args.cuda)
 
             if model_ema is not None and not args.model_ema_force_cpu:
                 if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
                     distribute_bn(model_ema, args.world_size, args.dist_bn == 'reduce')
                 ema_eval_metrics = validate(
-                    model_ema.module, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, log_suffix=' (EMA)')
+                    model_ema.module, loader_eval, validate_loss_fn, args, amp_autocast=amp_autocast, log_suffix=' (EMA)', cuda=args.cuda)
                 eval_metrics = ema_eval_metrics
 
             if lr_scheduler is not None:
@@ -690,7 +705,7 @@ def main():
 def train_one_epoch(
         epoch, model, loader, optimizer, loss_fn, args,
         lr_scheduler=None, saver=None, output_dir=None, amp_autocast=suppress,
-        loss_scaler=None, model_ema=None, mixup_fn=None):
+        loss_scaler=None, model_ema=None, mixup_fn=None, cuda=True):
 
     if args.mixup_off_epoch and epoch >= args.mixup_off_epoch:
         if args.prefetcher and loader.mixup_enabled:
@@ -712,7 +727,8 @@ def train_one_epoch(
         last_batch = batch_idx == last_idx
         data_time_m.update(time.time() - end)
         if not args.prefetcher:
-            input, target = input.cuda(), target.cuda()
+            if cuda:
+                input, target = input.cuda(), target.cuda()
             if mixup_fn is not None:
                 input, target = mixup_fn(input, target)
         if args.channels_last:
@@ -742,8 +758,8 @@ def train_one_epoch(
 
         if model_ema is not None:
             model_ema.update(model)
-
-        torch.cuda.synchronize()
+        if cuda:
+            torch.cuda.synchronize()
         num_updates += 1
         batch_time_m.update(time.time() - end)
         if last_batch or batch_idx % args.log_interval == 0:
@@ -795,7 +811,7 @@ def train_one_epoch(
     return OrderedDict([('loss', losses_m.avg)])
 
 
-def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix=''):
+def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='', cuda=True):
     batch_time_m = AverageMeter()
     losses_m = AverageMeter()
     top1_m = AverageMeter()
@@ -809,8 +825,9 @@ def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='')
         for batch_idx, (input, target) in enumerate(loader):
             last_batch = batch_idx == last_idx
             if not args.prefetcher:
-                input = input.cuda()
-                target = target.cuda()
+                if cuda:
+                    input = input.cuda()
+                    target = target.cuda()
             if args.channels_last:
                 input = input.contiguous(memory_format=torch.channels_last)
 
@@ -834,8 +851,8 @@ def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='')
                 acc5 = reduce_tensor(acc5, args.world_size)
             else:
                 reduced_loss = loss.data
-
-            torch.cuda.synchronize()
+            if cuda:
+                torch.cuda.synchronize()
 
             losses_m.update(reduced_loss.item(), input.size(0))
             top1_m.update(acc1.item(), output.size(0))
