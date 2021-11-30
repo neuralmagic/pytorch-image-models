@@ -328,9 +328,6 @@ def main():
                             "Metrics not being logged to wandb, try `pip install wandb`")
             args.log_wandb = False
 
-            args.log_wandb = False
-
-
     args.cuda = not args.disable_cuda
     args.prefetcher = not args.no_prefetcher
     if args.distributed and args.disable_cuda:
