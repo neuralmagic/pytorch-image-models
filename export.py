@@ -209,10 +209,7 @@ def parse_args() -> ExportArgs:
 
 def export(args: ExportArgs):
 
-<<<<<<< HEAD
     # Load model-specific configs
-=======
->>>>>>> export support
     with open(args.config, 'r') as f:
             cfg = yaml.safe_load(f)
             cfg = Namespace(**cfg)
@@ -231,23 +228,15 @@ def export(args: ExportArgs):
             bn_eps=cfg.bn_eps,
             scriptable=cfg.torchscript,
             checkpoint_path=None)
-<<<<<<< HEAD
 
     # Apply recipe to model and then load in saved weights
-=======
-    #optimizer = create_optimizer_v2(model, **optimizer_kwargs(cfg=cfg))
->>>>>>> export support
     manager = ScheduledModifierManager.from_yaml(args.recipe)
     manager.apply(model)
     batch_shape = (args.batch_size, *args.image_shape)
     state_dict = torch.load(args.checkpoint)
     model.load_state_dict(state_dict['state_dict'])
-<<<<<<< HEAD
 
     # export to onnx graph   
-=======
-       
->>>>>>> export support
     export_onnx(
         module=model,
         sample_batch=torch.randn(*batch_shape),
