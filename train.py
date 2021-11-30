@@ -652,13 +652,17 @@ def main():
         for epoch in range(start_epoch, num_epochs):
             if args.distributed and hasattr(loader_train.sampler, 'set_epoch'):
                 loader_train.sampler.set_epoch(epoch)
-            qat = manager.quantization_modifiers and \
-                (min([mod.start_epoch for mod in manager.quantization_modifiers]) < epoch + 1)
+            if manager.quantization_modifiers and \
+                (min([mod.start_epoch for mod in manager.quantization_modifiers]) < epoch + 1):
+                _logger.info('Disabling half precision and EMA, QAT scheduled to run')
+                amp_autocast = suppress
+                loss_scaler = None
+                model_ema = None
 
             train_metrics = train_one_epoch(
                 epoch, model, loader_train, optimizer, train_loss_fn, args,
                 lr_scheduler=lr_scheduler, saver=saver, output_dir=output_dir,
-                amp_autocast=amp_autocast, loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn, cuda=args.cuda, qat=qat)
+                amp_autocast=amp_autocast, loss_scaler=loss_scaler, model_ema=model_ema, mixup_fn=mixup_fn, cuda=args.cuda)
 
             if args.distributed and args.dist_bn in ('broadcast', 'reduce'):
                 if args.local_rank == 0:
@@ -708,13 +712,7 @@ def main():
 def train_one_epoch(
         epoch, model, loader, optimizer, loss_fn, args,
         lr_scheduler=None, saver=None, output_dir=None, amp_autocast=suppress,
-        loss_scaler=None, model_ema=None, mixup_fn=None, cuda=True, qat = False):
-
-    if qat:
-        _logger.info('Disabling half precision and EMA, QAT scheduled to run')
-        amp_autocast = suppress
-        loss_scaler = None
-        model_ema = None
+        loss_scaler=None, model_ema=None, mixup_fn=None, cuda=True):
 
     if args.mixup_off_epoch and epoch >= args.mixup_off_epoch:
         if args.prefetcher and loader.mixup_enabled:
