@@ -298,7 +298,9 @@ parser.add_argument('--torchscript', dest='torchscript', action='store_true',
 parser.add_argument('--log-wandb', action='store_true', default=False,
                     help='log training and validation metrics to wandb')
 
-
+# Sparseml
+parser.add_argument('--no-qat-conv', action='store_true', default=False,
+                    help='prevent conversion of a QAT Graph to a Quantized Graph')
 def _parse_args():
     # Do we have a config file to parse?
     args_config, remaining = config_parser.parse_known_args()
@@ -694,7 +696,7 @@ def main():
             exporter = ModuleExporter(model, output_dir)
             exporter.export_onnx(
                 torch.randn((1, *data_config["input_size"])),
-                convert_qat=True
+                convert_qat = not args.no_qat_conv
             )
 
     except KeyboardInterrupt:

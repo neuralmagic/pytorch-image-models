@@ -47,7 +47,7 @@ optional arguments:
 ##########
 Example usage:
 python export.py --checkpoint ./checkpoints/vit_base_patch32_224-224_pruned.pth.tar \
-    --recipe ./recipes/vit_base.85.recal.config.yaml \
+    --recipe ./recipes/vit_base.85.recal.config.yaml 
 ##########
 Example Two:
 python export.py --checkpoint ./quantized-checkpoint/vit_base_patch32_224-224_pruned.pth.tar \
@@ -85,7 +85,7 @@ class ExportArgs:
     checkpoint: Path
     config: str
     recipe: str
-    no_qat: bool
+    no_qat_conv: bool
     batch_size: int
     image_shape: Iterable
     name: Path
@@ -227,7 +227,8 @@ def export(args: ExportArgs):
             bn_momentum=cfg.bn_momentum,
             bn_eps=cfg.bn_eps,
             scriptable=cfg.torchscript,
-            checkpoint_path=None)
+            checkpoint_path=None,
+            )
 
     # Apply recipe to model and then load in saved weights
     manager = ScheduledModifierManager.from_yaml(args.recipe)
@@ -241,7 +242,7 @@ def export(args: ExportArgs):
         module=model,
         sample_batch=torch.randn(*batch_shape),
         file_path=str(args.name),
-        convert_qat=True,
+        convert_qat= not args.no_qat_conv,
     )
 
 
