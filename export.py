@@ -17,7 +17,7 @@ Helper script to export ViT models to ONNX
 ##########
 Command help:
 usage: export.py [-h] --checkpoint CHECKPOINT [--config CONFIG] \
-    [--recipe RECIPE] [--convert-qat] [--batch-size BATCH_SIZE] \
+    [--recipe RECIPE] [--no-qat-conv] [--batch-size BATCH_SIZE] \
     [--image-shape IMAGE_SHAPE [IMAGE_SHAPE ...]] \
     [--save-dir SAVE_DIR] [--name NAME]
 Export ViT models to ONNX
@@ -32,7 +32,7 @@ optional arguments:
   --recipe RECIPE, -r RECIPE
                         Path or SparseZoo stub to the recipe used for training,
                         omit if no recipe used.
-  --no-qat, -N          Flag to prevent conversion of a QAT(Quantization Aware
+  --no-qat-conv, -N          Flag to prevent conversion of a QAT(Quantization Aware
                         Training) Graph to a Quantized Graph
   --batch-size BATCH_SIZE, -b BATCH_SIZE
                         The batch size to use while exporting the Model graph to
@@ -168,7 +168,7 @@ def parse_args() -> ExportArgs:
     )
 
     parser.add_argument(
-        "--no-qat",
+        "--no-qat-conv",
         "-N",
         action="store_true",
         help="Flag to prevent conversion of a QAT(Quantization Aware Training) "
