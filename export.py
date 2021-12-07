@@ -137,6 +137,7 @@ class ExportArgs:
 def parse_args() -> ExportArgs:
     """
     Add and parse arguments for exporting a ViT model to ONNX
+    
     :return: A ExportArgs Object with typed arguments
     """
     parser = argparse.ArgumentParser(description="Export ViT models to ONNX")
