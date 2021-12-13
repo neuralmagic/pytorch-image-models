@@ -32,7 +32,7 @@ optional arguments:
   --recipe RECIPE, -r RECIPE
                         Path or SparseZoo stub to the recipe used for training,
                         omit if no recipe used.
-  --no-qat-conv, -N          Flag to prevent conversion of a QAT(Quantization Aware
+  --no-qat-conv, -N     Flag to prevent conversion of a QAT(Quantization Aware
                         Training) Graph to a Quantized Graph
   --batch-size BATCH_SIZE, -b BATCH_SIZE
                         The batch size to use while exporting the Model graph to
