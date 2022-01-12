@@ -212,6 +212,9 @@ def create_loader(
     if distributed and not isinstance(dataset, torch.utils.data.IterableDataset):
         if is_training:
             sampler = torch.utils.data.distributed.DistributedSampler(dataset)
+            world_size = torch.distributed.get_world_size()
+            if world_size:
+                batch_size = batch_size//world_size
         else:
             # This will add extra duplicate entries to result in equal num
             # of samples per-process, will slightly alter validation results
