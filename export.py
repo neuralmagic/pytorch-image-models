@@ -109,29 +109,11 @@ class ExportArgs:
             )
         
         self.image_shape = tuple(self.image_shape)
-        name_path = Path(self.name) if self.name else Path(".")
-        if name_path.suffix == '':
-            self.save_dir = name_path
-            self.name = ''
-        else:
-            self.save_dir = name_path.parent
-            self.name = name_path.name
-        self.save_dir.mkdir(parents=True, exist_ok=True)
-        self.name = self.get_safe_name()
 
-    def get_safe_name(self):
-        if self.name:
-            self.name = Path(self.name)
-        else:
-            self.name = Path(self.checkpoint.with_suffix(".onnx").name)
-
-        filename = self.name.stem
-        self.name = self.save_dir / f"{filename}.onnx"
-        existence_counter = 0
-        while self.name.exists():
-            existence_counter += 1
-            self.name = self.name.parent / f"{filename}-{existence_counter}.onnx"
-        return self.name
+        if not self.save_dir:
+            self.save_dir = 'onnx'
+        if not self.name:
+            self.name = str(self.checkpoint.with_suffix(".onnx").name)
 
 
 def parse_args() -> ExportArgs:
@@ -196,12 +178,20 @@ def parse_args() -> ExportArgs:
     )
 
     parser.add_argument(
+        "--save-dir",
+        type=str,
+        default=None,
+        help="The directory for saving the exported ONNX model."
+             "If none, defaults to onnx/",
+    )
+
+    parser.add_argument(
         "--name",
         "-n",
         type=str,
         default=None,
-        help="The path to use for saving the exported ONNX model."
-             "If directory, defaults to checkpoint-name.onnx",
+        help="The name of the exported ONNX model."
+             "If none, defaults to checkpoint-name.onnx",
     )
 
     args = parser.parse_args()
@@ -242,7 +232,7 @@ def export(args: ExportArgs):
     export_onnx(
         module=model,
         sample_batch=torch.randn(*batch_shape),
-        file_path=str(args.name),
+        file_path=os.path.join(args.save_dir, args.name),
         convert_qat= not args.no_qat_conv,
     )
 
