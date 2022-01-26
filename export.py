@@ -19,7 +19,7 @@ Command help:
 usage: export.py [-h] --checkpoint CHECKPOINT [--config CONFIG] \
     [--recipe RECIPE] [--no-qat-conv] [--batch-size BATCH_SIZE] \
     [--image-shape IMAGE_SHAPE [IMAGE_SHAPE ...]] \
-    [--save-dir SAVE_DIR] [--name NAME]
+    [--save-dir SAVE_DIR] [--filename FILENAME]
 Export ViT models to ONNX
 optional arguments:
   -h, --help            show this help message and exit
@@ -43,7 +43,7 @@ optional arguments:
   --save-dir SAVE_DIR, -s SAVE_DIR
                         The directory to save exported models to; Defaults to
                         "./exported_models"
-  --name NAME, -n NAME  The name to use for saving the exported ONNX model
+  --filename FILENAME, -n FILENAME  The name to use for saving the exported ONNX model
 ##########
 Example usage:
 python export.py --checkpoint ./checkpoints/vit_base_patch32_224-224_pruned.pth.tar \
@@ -53,7 +53,7 @@ Example Two:
 python export.py --checkpoint ./quantized-checkpoint/vit_base_patch32_224-224_pruned.pth.tar \
     --recipe ./recipes/vit_base.85.quant.config.yaml \
     --save-dir ./exported-models \
-    --name vit_base_patch32_224-224 \
+    --filename vit_base_patch32_224-224 \
     --batch-size 1 \
     --image-shape 3 550 550 \
     --config ./quantized-checkpoint/args.yaml
@@ -88,7 +88,8 @@ class ExportArgs:
     no_qat_conv: bool
     batch_size: int
     image_shape: Iterable
-    name: Path
+    save_dir: str
+    filename: str
 
     def __post_init__(self):
         """
@@ -109,29 +110,16 @@ class ExportArgs:
             )
         
         self.image_shape = tuple(self.image_shape)
-        name_path = Path(self.name) if self.name else Path(".")
-        if name_path.suffix == '':
-            self.save_dir = name_path
-            self.name = ''
-        else:
-            self.save_dir = name_path.parent
-            self.name = name_path.name
-        self.save_dir.mkdir(parents=True, exist_ok=True)
-        self.name = self.get_safe_name()
 
-    def get_safe_name(self):
-        if self.name:
-            self.name = Path(self.name)
+        if not self.save_dir:
+            self.save_dir = 'onnx'
+        if self.filename:
+            head, extension = os.path.splitext(self.filename)
+            if not extension:
+                self.filename += '.onnx'
         else:
-            self.name = Path(self.checkpoint.with_suffix(".onnx").name)
+            self.filename = str(self.checkpoint.with_suffix(".onnx").name)
 
-        filename = self.name.stem
-        self.name = self.save_dir / f"{filename}.onnx"
-        existence_counter = 0
-        while self.name.exists():
-            existence_counter += 1
-            self.name = self.name.parent / f"{filename}-{existence_counter}.onnx"
-        return self.name
 
 
 def parse_args() -> ExportArgs:
@@ -196,12 +184,19 @@ def parse_args() -> ExportArgs:
     )
 
     parser.add_argument(
-        "--name",
-        "-n",
+        "--save-dir",
         type=str,
         default=None,
-        help="The path to use for saving the exported ONNX model."
-             "If directory, defaults to checkpoint-name.onnx",
+        help="The directory for saving the exported ONNX model."
+             "If none, defaults to onnx/",
+    )
+
+    parser.add_argument(
+        "--filename",
+        type=str,
+        default=None,
+        help="The name of the exported ONNX model."
+             "If none, defaults to checkpoint-name.onnx",
     )
 
     args = parser.parse_args()
@@ -242,7 +237,7 @@ def export(args: ExportArgs):
     export_onnx(
         module=model,
         sample_batch=torch.randn(*batch_shape),
-        file_path=str(args.name),
+        file_path=os.path.join(args.save_dir, args.filename),
         convert_qat= not args.no_qat_conv,
     )
 
