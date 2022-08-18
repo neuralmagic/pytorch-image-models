@@ -387,7 +387,7 @@ def main():
     elif args.initial_checkpoint.startswith("zoo:"):
         # Load weights from a SparseZoo model stub
         zoo_model = Model(args.initial_checkpoint)
-        args.initial_checkpoint = model.training.default.get_file("model.pth")
+        args.initial_checkpoint = zoo_model.training.default.get_file("model.pth").path
 
     model = create_model(
         args.model,
