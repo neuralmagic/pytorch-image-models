@@ -39,7 +39,7 @@ from timm.utils import ApexScaler, NativeScaler
 
 from sparseml.pytorch.optim import ScheduledModifierManager
 from sparseml.pytorch.utils import ModuleExporter, PythonLogger, TensorBoardLogger, WANDBLogger
-from sparsezoo import Zoo
+from sparsezoo import Model
 
 try:
     from apex import amp
@@ -386,7 +386,7 @@ def main():
             )
     elif args.initial_checkpoint.startswith("zoo:"):
         # Load weights from a SparseZoo model stub
-        zoo_model = Zoo.load_model_from_stub(args.initial_checkpoint)
+        zoo_model = Model(args.initial_checkpoint)
         args.initial_checkpoint = zoo_model.download_framework_files(extensions=[".pth"])[0]
 
     model = create_model(
